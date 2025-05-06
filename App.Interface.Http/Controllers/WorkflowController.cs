@@ -15,29 +15,27 @@ namespace App.Interface.Http.Controllers
         [HttpPut("{workflowGuid}")]
         public IActionResult CreateOrReplaceWorkflow(Guid workflowGuid, [FromBody] IWorkflowDto workflowDto)
         {
-            if (workflowDto == null)
-            {
-                return BadRequest("Invalid workflow data.");
-            }
             workflowDto.ExternalKey = workflowGuid;
 
             var command = new ValidateAndSaveWorkflowCommand
             {
                 ServiceProvider = serviceProvider,
                 WorkflowDto = workflowDto
-            }.Execute();
+            };
 
-            if (command.OutcomeFlags == OutcomeFlags.Success)
+            var outcome = command.Execute();
+
+            if (outcome.IsSuccess())
             {
-                return StatusCode(200);
+                return Ok();
             }
 
-            if (command.OutcomeFlags == OutcomeFlags.Invalid)
+            if (outcome.IsInvalid())
             {
-                return StatusCode(400);
+                return this.BadRequest(outcome.Messages);
             }
 
-            return StatusCode(500, command);
+            return StatusCode((int)HttpStatusCode.InternalServerError, outcome.Messages);
         }
 
         [HttpGet("{workflowGuid}")]
@@ -50,18 +48,20 @@ namespace App.Interface.Http.Controllers
             };
 
             var outcome = serviceProvider.GetRequiredService<IServiceFactory>().WorkflowService().PopulateWorkflowDto(workflowDto);
-            if (outcome.IsInvalid())
+            if (outcome.IsFound())
             {
-                return StatusCode((int)HttpStatusCode.BadRequest);
-            }
-            if (outcome.IsSuccess())
-            {
-                // return workflowDto as JsonResult;
                 return Ok(workflowDto);
             }
+            if (outcome.IsNotFound())
+            {
+                return NotFound();
+            }
+            if (outcome.IsInvalid())
+            {
+                return BadRequest(outcome.Messages);
+            }
 
-            // Assuming the workflow exists. Otherwise, return NotFound.
-            return Ok(workflowDto);
+            return StatusCode((int)HttpStatusCode.InternalServerError, outcome.Messages);
         }
     }
 }
